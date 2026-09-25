@@ -98,7 +98,7 @@ Smaller parameters, three repeats:
 Running `./build/bfv_bench` with no arguments is the same as
 `./build/bfv_bench 3`.
 
-On the machine used for the paper's timing table (a 10-core Intel Core
+On the machine used for the paper's timing table (a 20-core Intel Core
 i9-10900, Microsoft SEAL 4.1.2), three repeats of the main experiment gave:
 
 | Method | Run 1 | Run 2 | Run 3 | Middle value |
