@@ -1,21 +1,20 @@
 # BFV slot inversion
 
-This program encrypts one number under the BFV homomorphic encryption
-scheme and computes its multiplicative inverse, without decrypting in
-the middle. It runs two circuits on the same ciphertext and checks that
-both decrypt to the correct inverse.
+This program encrypts a number with the BFV encryption scheme and computes
+its inverse without decrypting in the middle. It runs the two methods from
+the paper on the same encrypted value and checks that both decrypt to the
+right answer.
 
-Microsoft SEAL 4.1 must already be installed. The source tree contains
-no compiled programs. The commands below create them.
+The source folder does not contain compiled programs. The commands below
+build them. Microsoft SEAL 4.1 must already be installed.
 
 ## Requirements
 
 - CMake 3.16 or newer
 - A C++17 compiler
-- Microsoft SEAL 4.1 (SEAL 4.0 is used if 4.1 is not installed)
+- Microsoft SEAL 4.1. If SEAL 4.1 is missing, the build uses SEAL 4.0.
 
-`find_package(SEAL)` must succeed. SEAL is often installed under
-`/usr/local`.
+SEAL is usually installed under `/usr/local`, so that CMake can find it.
 
 ## Build
 
@@ -26,29 +25,28 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-That produces:
+This creates two programs:
 
-- `build/bfv_inversion` — one correctness test
-- `build/bfv_bench` — a timing test
+- `build/bfv_inversion` checks that the answer is correct
+- `build/bfv_bench` measures how long each method takes
 
-## Check the result
+## Check the answer
 
-The default is the parameter set used for the main experiment:
+The default settings are the ones used in the paper:
 
 - plaintext prime 163841
 - polynomials of degree 131072
-- 16384 numbers packed in one ciphertext
-- ciphertext modulus made of 24 primes, 50 bits each
+- 16384 numbers packed into one ciphertext
+- ciphertext modulus made from 24 primes of 50 bits each
 
-This takes a few minutes.
+The run takes a few minutes.
 
 ```bash
 ./build/bfv_inversion 12345
 ```
 
-`12345` is the secret value. Any integer from 1 to 163840 is accepted.
-A correct run prints the following. `FMC` is the first circuit
-(Frobenius Monomial Circuit) and `NT` is the second (Norm Tower).
+Here 12345 is the secret number. Any whole number from 1 to 163840 is
+allowed. A correct run prints:
 
 ```text
 m         = 12345
@@ -61,86 +59,111 @@ NT  result = 143190  CORRECT
 [depth   22]  NT
 ```
 
-Depth 21 and depth 22 count encrypted multiplications along the longest
-path of each circuit. The program exits with status 0 only when both
-answers equal 143190 and the check product equals 1.
+FMC is the first method in the paper, the Frobenius Monomial Circuit.
+NT is the second method, the Norm Tower. The depth is how many encrypted
+multiplications sit on the longest path. The direct way of computing the
+inverse, by raising the number to a huge power, needs depth 139 on these
+parameters. The Norm Tower needs depth 22. The Frobenius Monomial Circuit
+needs depth 21, which the paper shows is the smallest possible depth.
 
-A smaller parameter set finishes in under a minute. It uses prime
-40961, degree 32768, and 4096 packed numbers. The inverse of 12345
-modulo 40961 is 15243. The depths are 19 and 20.
+The program exits with status 0 only when both answers are 143190 and the
+check product is 1.
+
+A smaller test finishes in under a minute. It uses prime 40961, degree
+32768, and 4096 packed numbers. The inverse of 12345 is then 15243, and
+the two depths are 19 and 20.
 
 ```bash
 ./build/bfv_inversion 12345 small
 ```
 
-## Time the two circuits
+## Measure the running time
 
-Keys are generated first and are not included in the times. The number
-is how many times each circuit is repeated. The median is the middle run.
+Key generation is finished before the timer starts. The number after the
+program name is how many times each method is repeated. The median is the
+middle of those repeats.
 
-Main experiment, three repeats:
+Paper parameters, three repeats:
 
 ```bash
 ./build/bfv_bench 3
 ```
 
-Smaller parameter set, three repeats:
+Smaller parameters, three repeats:
 
 ```bash
 ./build/bfv_bench 3 small
 ```
 
-`./build/bfv_bench` alone is the same as `./build/bfv_bench 3`.
+Running `./build/bfv_bench` with no arguments is the same as
+`./build/bfv_bench 3`.
 
-Help text:
+On the machine used for the paper's timing table (a 10-core Intel Core
+i9-10900, Microsoft SEAL 4.1.2), three repeats of the main experiment gave:
+
+| Method | Run 1 | Run 2 | Run 3 | Middle value |
+|---|---:|---:|---:|---:|
+| Frobenius Monomial Circuit, first stage | 31.0 s | 30.4 s | 30.5 s | 30.5 s |
+| Frobenius Monomial Circuit, second stage | 1.0 s | 1.0 s | 1.0 s | 1.0 s |
+| Frobenius Monomial Circuit, total, depth 21 | 32.0 s | 31.3 s | 31.5 s | 31.5 s |
+| Norm Tower, total, depth 22 | 45.8 s | 45.6 s | 45.9 s | 45.8 s |
+
+The first method inverts all 16384 packed numbers in 31.5 seconds, about
+521 numbers per second. The Norm Tower takes 45.8 seconds, about 358
+numbers per second. The first method is about 31 percent faster. Almost
+all of its time, 30.5 of the 31.5 seconds, is the first stage. The second
+stage, which multiplies the eight pieces together, takes 1.0 second. The
+Norm Tower is slower because it first multiplies eight full-size
+ciphertexts before it can start the same kind of power computation.
+
+On the smaller parameter set the same three-repeat measurement gave 5.5
+seconds for the Frobenius Monomial Circuit and 7.9 seconds for the Norm
+Tower.
 
 ```bash
 ./build/bfv_inversion --list
 ```
 
-## What is computed
+prints these two choices again.
 
-One BFV ciphertext holds many independent numbers, called slots. A
-single circuit operation acts on every slot. Here each slot is inverted.
+## What the two methods do
 
-Two circuits are implemented.
+One ciphertext holds many numbers at once, and one operation changes all
+of them. Both methods turn every packed number into its inverse.
 
-The Frobenius Monomial Circuit has multiplicative depth 21 on the main
-parameter set (19 on the smaller one). It evaluates
+The encryption scheme can raise a packed number to the p-th power, and
+repeat that, at no extra multiplication depth. Those images are the raw
+material for both methods. Only one extra key is needed for this map.
+Later images are made by applying the same key again.
 
-\[
-m^{-1} = m^{p-2} \cdot \kappa_p(m^{p-1}) \cdot \kappa_{p^2}(m^{p-1}) \cdots
-\]
+The Frobenius Monomial Circuit builds the inverse from those images with
+21 encrypted multiplications on the longest path. For the prime 163841
+the two hard powers are produced from one shared sequence of squarings.
+The next square and the running product do not depend on each other, so
+they are computed at the same time. The eight results are then multiplied
+together in a tree of depth 3.
 
-up to \(d-1\) applications of the Frobenius map \(\kappa_p\), which
-sends a slot \(m\) to \(m^p\). Those maps are key-switches. They do not
-count as multiplications. For the prime 163841,
+The Norm Tower first multiplies all the images together. That product
+lands in the smaller base field, where inversion is cheaper, and a final
+multiplication puts the result back in the original slot. That final
+multiplication is why this method has depth 22, one more than the other.
+The extra product that rebuilds the answer runs at the same time as the
+base-field inversion.
 
-\[
-p-1 = 2^{17}+2^{15}, \qquad p-2 = 2^{17}+2^{15}-1,
-\]
+After every multiplication the ciphertext drops one prime from its
+modulus, so later steps handle a smaller object. The main experiment uses
+24 primes because depth 22, plus one check multiplication, needs 23
+working levels, and one extra prime is reserved for key switching. Each
+worker thread uses its own scratch memory.
 
-so both powers are products of values produced by one sequence of
-squarings. In that sequence the next square and the running product do
-not depend on each other, and they are computed at the same time.
-
-The Norm Tower has depth 22 on the main parameter set (20 on the smaller
-one). It sends the slot down to the base field by a product of Frobenius
-images (the field norm), inverts that base-field element, and multiplies
-back by the remaining images. The product of the remaining images runs
-at the same time as the base-field inversion.
-
-After every multiplication the ciphertext modulus loses one prime, so
-later steps are smaller. Each thread uses its own SEAL memory pool.
-
-Both parameter sets are inside a 128-bit security estimate for the
+Both parameter sets stay inside a 128-bit security estimate for the
 modulus they use.
 
-| | Main experiment | Smaller test (`small`) |
+| | Main experiment | Smaller test |
 |---|---|---|
 | Plaintext prime | 163841 | 40961 |
 | Polynomial degree | 131072 | 32768 |
 | Numbers in one ciphertext | 16384 | 4096 |
 | Ciphertext modulus | 24 primes of 50 bits | 22 primes of 32 bits |
-| First circuit | depth 21 | depth 19 |
-| Second circuit | depth 22 | depth 20 |
+| Frobenius Monomial Circuit | depth 21, 31.5 seconds | depth 19, 5.5 seconds |
+| Norm Tower | depth 22, 45.8 seconds | depth 20, 7.9 seconds |
